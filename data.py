@@ -2,106 +2,104 @@ import streamlit as st
 import hashlib
 from cryptography.fernet import Fernet
 
-# --- App Config ---
-st.set_page_config(page_title="Secure Data App", page_icon="🔐")
-
-# --- Encryption Key ---
+# Generate a key (in production, load securely from file/env)
 KEY = Fernet.generate_key()
 cipher = Fernet(KEY)
 
-# --- In-Memory Storage ---
-stored_data = {}  # {encrypted_text: {"encrypted_text": ..., "passkey": hashed_passkey}}
+# In-memory database
+stored_data = {}
 failed_attempts = 0
 
-
-# --- Utility Functions ---
+# -----------------------
+# Utility Functions
+# -----------------------
 
 def hash_passkey(passkey):
     return hashlib.sha256(passkey.encode()).hexdigest()
 
-
-def encrypt_data(text):
+def encrypt_data(text, passkey):
     return cipher.encrypt(text.encode()).decode()
 
-
-def decrypt_data(encrypted_text):
-    return cipher.decrypt(encrypted_text.encode()).decode()
-
-
-def verify_and_decrypt(encrypted_text, passkey):
+def decrypt_data(encrypted_text, passkey):
     global failed_attempts
     hashed_passkey = hash_passkey(passkey)
 
-    if encrypted_text in stored_data:
-        stored_passkey = stored_data[encrypted_text]["passkey"]
-        if hashed_passkey == stored_passkey:
+    for key, value in stored_data.items():
+        if value["encrypted_text"] == encrypted_text and value["passkey"] == hashed_passkey:
             failed_attempts = 0
-            return decrypt_data(encrypted_text)
-
+            return cipher.decrypt(encrypted_text.encode()).decode()
+    
     failed_attempts += 1
     return None
 
+# -----------------------
+# Streamlit UI Layout
+# -----------------------
 
-# --- Sidebar Navigation ---
-st.sidebar.title("🔐 Navigation")
-menu = st.sidebar.radio("Go to", ["Home", "Store Data", "Retrieve Data", "Login"])
+st.set_page_config(page_title="🔐 Secure Storage", layout="centered")
 
-# --- Pages ---
+# Sidebar Menu (Menu Bar)
+st.sidebar.title("🔐 Secure Menu")
+menu = st.sidebar.radio("Navigate", ["🏠 Home", "📂 Store Data", "🔍 Retrieve Data", "🔑 Login"])
 
-if menu == "Home":
-    st.title("🏠 Welcome to Secure Data System")
-    st.markdown("This app lets you **encrypt** and **retrieve** data using a passkey.")
-    st.markdown("- 🔒 All data is stored in memory.")
-    st.markdown("- 🧠 Passkeys are hashed with SHA-256.")
-    st.markdown("- 🧪 Encryption uses **Fernet** from the `cryptography` module.")
+st.markdown("<hr>", unsafe_allow_html=True)
 
-elif menu == "Store Data":
-    st.header("📂 Store Data Securely")
+# -----------------------
+# Page Logic
+# -----------------------
 
-    text = st.text_area("Enter text to encrypt:")
-    passkey = st.text_input("Enter a passkey:", type="password")
+if menu == "🏠 Home":
+    st.title("🏠 Welcome to Secure Data Storage")
+    st.markdown("""
+        Use this tool to **store** and **retrieve** sensitive data securely using a passkey.  
+        Features include:
+        - 🔐 AES encryption using Fernet
+        - 🧠 In-memory storage (no database)
+        - 🚫 Lockout after 3 failed decryption attempts  
+        - 🔑 Simple reauthentication to continue  
+    """)
 
-    if st.button("Encrypt & Save"):
-        if text and passkey:
+elif menu == "📂 Store Data":
+    st.title("📂 Store Your Data")
+    user_data = st.text_area("🔸 Enter the data you want to secure:")
+    passkey = st.text_input("🔑 Set a secure passkey:", type="password")
+
+    if st.button("Encrypt & Store"):
+        if user_data and passkey:
             hashed = hash_passkey(passkey)
-            encrypted = encrypt_data(text)
+            encrypted = encrypt_data(user_data, passkey)
             stored_data[encrypted] = {"encrypted_text": encrypted, "passkey": hashed}
-            st.success("✅ Data encrypted and stored securely!")
+            st.success("✅ Your data has been encrypted and stored securely!")
             st.code(encrypted, language='text')
         else:
-            st.warning("⚠️ Please enter both text and a passkey.")
+            st.error("⚠️ Please enter both data and a passkey.")
 
-elif menu == "Retrieve Data":
-    st.header("🔍 Retrieve Stored Data")
+elif menu == "🔍 Retrieve Data":
+    st.title("🔍 Retrieve Encrypted Data")
+    encrypted_input = st.text_area("🔸 Paste your encrypted data here:")
+    passkey = st.text_input("🔑 Enter your passkey:", type="password")
 
-    encrypted_input = st.text_area("Paste encrypted data:")
-    passkey_input = st.text_input("Enter your passkey:", type="password")
-
-    if st.button("Decrypt"):
-        if encrypted_input and passkey_input:
-            result = verify_and_decrypt(encrypted_input, passkey_input)
-
-            if result:
-                st.success("✅ Decrypted Data:")
-                st.code(result, language='text')
+    if st.button("Decrypt Data"):
+        if encrypted_input and passkey:
+            decrypted = decrypt_data(encrypted_input, passkey)
+            if decrypted:
+                st.success("✅ Decryption successful!")
+                st.code(decrypted, language='text')
             else:
-                attempts_left = max(0, 3 - failed_attempts)
-                st.error(f"❌ Incorrect passkey. Attempts remaining: {attempts_left}")
+                st.error(f"❌ Incorrect passkey! Attempts remaining: {3 - failed_attempts}")
                 if failed_attempts >= 3:
-                    st.warning("🔒 Too many failed attempts. Redirecting to login...")
+                    st.warning("🔒 3 failed attempts! Redirecting to login...")
                     st.experimental_rerun()
         else:
-            st.warning("⚠️ Please enter both encrypted data and passkey.")
+            st.error("⚠️ Both fields are required!")
 
-elif menu == "Login":
-    st.header("🔑 Reauthorization")
-
-    login_pass = st.text_input("Enter master password:", type="password")
+elif menu == "🔑 Login":
+    st.title("🔑 Reauthorization")
+    login = st.text_input("🔐 Enter master password to reset:", type="password")
 
     if st.button("Login"):
-        if login_pass == "admin123":  # Replace with a secure method in production
+        if login == "admin123":  # Demo password
             failed_attempts = 0
-            st.success("✅ Reauthorized! You may now decrypt again.")
-            st.experimental_rerun()
+            st.success("✅ Reauthorized! You can now try retrieving data again.")
         else:
-            st.error("❌ Invalid password!")
+            st.error("❌ Wrong password. Try again.")
