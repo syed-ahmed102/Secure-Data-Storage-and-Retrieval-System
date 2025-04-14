@@ -1,114 +1,107 @@
 import streamlit as st
-from cryptography.fernet import Fernet, InvalidToken
-import base64
+import hashlib
+from cryptography.fernet import Fernet
 
-# --- Simulated database (in-memory) ---
-data_store = {}
-failed_attempts = {}
+# --- App Config ---
+st.set_page_config(page_title="Secure Data App", page_icon="🔐")
 
-# --- Session State Initialization ---
-if "login_attempts" not in st.session_state:
-    st.session_state.login_attempts = 0
+# --- Encryption Key ---
+KEY = Fernet.generate_key()
+cipher = Fernet(KEY)
 
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
+# --- In-Memory Storage ---
+stored_data = {}  # {encrypted_text: {"encrypted_text": ..., "passkey": hashed_passkey}}
+failed_attempts = 0
 
-if "max_attempts" not in st.session_state:
-    st.session_state.max_attempts = 3
 
-# --- Functions ---
-def generate_key(passkey: str) -> bytes:
-    # Normalize passkey to 32 bytes for Fernet
-    key = base64.urlsafe_b64encode(passkey.ljust(32)[:32].encode())
-    return key
+# --- Utility Functions ---
 
-def encrypt_data(text: str, passkey: str) -> bytes:
-    key = generate_key(passkey)
-    fernet = Fernet(key)
-    return fernet.encrypt(text.encode())
+def hash_passkey(passkey):
+    return hashlib.sha256(passkey.encode()).hexdigest()
 
-def decrypt_data(encrypted_data: bytes, passkey: str) -> str:
-    key = generate_key(passkey)
-    fernet = Fernet(key)
-    return fernet.decrypt(encrypted_data).decode()
 
-def login_page():
-    st.title("🔐 Login Page")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        if username == "admin" and password == "admin":
-            st.session_state.authenticated = True
-            st.session_state.login_attempts = 0
-            st.success("Logged in successfully!")
+def encrypt_data(text):
+    return cipher.encrypt(text.encode()).decode()
+
+
+def decrypt_data(encrypted_text):
+    return cipher.decrypt(encrypted_text.encode()).decode()
+
+
+def verify_and_decrypt(encrypted_text, passkey):
+    global failed_attempts
+    hashed_passkey = hash_passkey(passkey)
+
+    if encrypted_text in stored_data:
+        stored_passkey = stored_data[encrypted_text]["passkey"]
+        if hashed_passkey == stored_passkey:
+            failed_attempts = 0
+            return decrypt_data(encrypted_text)
+
+    failed_attempts += 1
+    return None
+
+
+# --- Sidebar Navigation ---
+st.sidebar.title("🔐 Navigation")
+menu = st.sidebar.radio("Go to", ["Home", "Store Data", "Retrieve Data", "Login"])
+
+# --- Pages ---
+
+if menu == "Home":
+    st.title("🏠 Welcome to Secure Data System")
+    st.markdown("This app lets you **encrypt** and **retrieve** data using a passkey.")
+    st.markdown("- 🔒 All data is stored in memory.")
+    st.markdown("- 🧠 Passkeys are hashed with SHA-256.")
+    st.markdown("- 🧪 Encryption uses **Fernet** from the `cryptography` module.")
+
+elif menu == "Store Data":
+    st.header("📂 Store Data Securely")
+
+    text = st.text_area("Enter text to encrypt:")
+    passkey = st.text_input("Enter a passkey:", type="password")
+
+    if st.button("Encrypt & Save"):
+        if text and passkey:
+            hashed = hash_passkey(passkey)
+            encrypted = encrypt_data(text)
+            stored_data[encrypted] = {"encrypted_text": encrypted, "passkey": hashed}
+            st.success("✅ Data encrypted and stored securely!")
+            st.code(encrypted, language='text')
         else:
-            st.error("Incorrect login credentials")
+            st.warning("⚠️ Please enter both text and a passkey.")
 
-def home_page():
-    st.title("🏠 Secure Data Storage")
-    st.write("Choose an option below:")
-    if st.button("Insert New Data"):
-        st.session_state.page = "insert"
-    if st.button("Retrieve Data"):
-        st.session_state.page = "retrieve"
+elif menu == "Retrieve Data":
+    st.header("🔍 Retrieve Stored Data")
 
-def insert_data_page():
-    st.title("📝 Insert Data")
-    key = st.text_input("Key for data")
-    text = st.text_area("Enter text")
-    passkey = st.text_input("Enter passkey", type="password")
-    if st.button("Store Securely"):
-        encrypted = encrypt_data(text, passkey)
-        data_store[key] = encrypted
-        st.success("Data stored securely!")
+    encrypted_input = st.text_area("Paste encrypted data:")
+    passkey_input = st.text_input("Enter your passkey:", type="password")
 
-def retrieve_data_page():
-    st.title("🔍 Retrieve Data")
-    key = st.text_input("Enter the key")
-    passkey = st.text_input("Enter your passkey", type="password")
+    if st.button("Decrypt"):
+        if encrypted_input and passkey_input:
+            result = verify_and_decrypt(encrypted_input, passkey_input)
 
-    if st.button("Retrieve"):
-        if st.session_state.login_attempts >= st.session_state.max_attempts:
-            st.error("Maximum attempts reached. Redirecting to login page...")
-            st.session_state.authenticated = False
-            return
+            if result:
+                st.success("✅ Decrypted Data:")
+                st.code(result, language='text')
+            else:
+                attempts_left = max(0, 3 - failed_attempts)
+                st.error(f"❌ Incorrect passkey. Attempts remaining: {attempts_left}")
+                if failed_attempts >= 3:
+                    st.warning("🔒 Too many failed attempts. Redirecting to login...")
+                    st.experimental_rerun()
+        else:
+            st.warning("⚠️ Please enter both encrypted data and passkey.")
 
-        encrypted_data = data_store.get(key)
-        if not encrypted_data:
-            st.warning("No data found for this key.")
-            return
+elif menu == "Login":
+    st.header("🔑 Reauthorization")
 
-        try:
-            decrypted = decrypt_data(encrypted_data, passkey)
-            st.success("Decrypted Data:")
-            st.code(decrypted)
-            st.session_state.login_attempts = 0  # reset after successful attempt
-        except (InvalidToken, Exception):
-            st.session_state.login_attempts += 1
-            remaining = st.session_state.max_attempts - st.session_state.login_attempts
-            st.error(f"Invalid passkey. Attempts left: {remaining}")
+    login_pass = st.text_input("Enter master password:", type="password")
 
-def main():
-    if "page" not in st.session_state:
-        st.session_state.page = "home"
-
-    if not st.session_state.authenticated:
-        login_page()
-        return
-
-    if st.session_state.page == "home":
-        home_page()
-    elif st.session_state.page == "insert":
-        insert_data_page()
-    elif st.session_state.page == "retrieve":
-        retrieve_data_page()
-
-    st.sidebar.title("Navigation")
-    if st.sidebar.button("🏠 Home"):
-        st.session_state.page = "home"
-    if st.sidebar.button("🔓 Logout"):
-        st.session_state.authenticated = False
-        st.session_state.login_attempts = 0
-
-if __name__ == "__main__":
-    main()
+    if st.button("Login"):
+        if login_pass == "admin123":  # Replace with a secure method in production
+            failed_attempts = 0
+            st.success("✅ Reauthorized! You may now decrypt again.")
+            st.experimental_rerun()
+        else:
+            st.error("❌ Invalid password!")
