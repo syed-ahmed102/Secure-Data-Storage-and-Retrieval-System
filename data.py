@@ -15,7 +15,7 @@ def hash_passkey(passkey):
     return hashlib.sha256(passkey.encode()).hexdigest()
 
 # Function to encrypt data
-def encrypt_data(text, passkey):
+def encrypt_data(text):
     return cipher.encrypt(text.encode()).decode()
 
 # Function to decrypt data
@@ -27,7 +27,7 @@ def decrypt_data(encrypted_text, passkey):
         if value["encrypted_text"] == encrypted_text and value["passkey"] == hashed_passkey:
             failed_attempts = 0
             return cipher.decrypt(encrypted_text.encode()).decode()
-    
+
     failed_attempts += 1
     return None
 
@@ -44,45 +44,49 @@ if choice == "Home":
 
 elif choice == "Store Data":
     st.subheader("📂 Store Data Securely")
+    user_label = st.text_input("Enter Label for Your Data (e.g. user1_data):")
     user_data = st.text_area("Enter Data:")
     passkey = st.text_input("Enter Passkey:", type="password")
 
     if st.button("Encrypt & Save"):
-        if user_data and passkey:
+        if user_data and passkey and user_label:
             hashed_passkey = hash_passkey(passkey)
-            encrypted_text = encrypt_data(user_data, passkey)
-            stored_data[encrypted_text] = {"encrypted_text": encrypted_text, "passkey": hashed_passkey}
+            encrypted_text = encrypt_data(user_data)
+            stored_data[user_label] = {"encrypted_text": encrypted_text, "passkey": hashed_passkey}
             st.success("✅ Data stored securely!")
+            st.code(encrypted_text, language="text")
         else:
-            st.error("⚠️ Both fields are required!")
+            st.error("⚠️ All fields are required!")
 
 elif choice == "Retrieve Data":
     st.subheader("🔍 Retrieve Your Data")
-    encrypted_text = st.text_area("Enter Encrypted Data:")
+    user_label = st.text_input("Enter Label for Your Data (e.g. user1_data):")
     passkey = st.text_input("Enter Passkey:", type="password")
 
     if st.button("Decrypt"):
-        if encrypted_text and passkey:
-            decrypted_text = decrypt_data(encrypted_text, passkey)
+        if user_label and passkey:
+            if user_label in stored_data:
+                encrypted_text = stored_data[user_label]["encrypted_text"]
+                decrypted_text = decrypt_data(encrypted_text, passkey)
 
-            if decrypted_text:
-                st.success(f"✅ Decrypted Data: {decrypted_text}")
+                if decrypted_text:
+                    st.success(f"✅ Decrypted Data: {decrypted_text}")
+                else:
+                    st.error(f"❌ Incorrect passkey! Attempts remaining: {3 - failed_attempts}")
+                    if failed_attempts >= 3:
+                        st.warning("🔒 Too many failed attempts! Redirecting to Login Page.")
+                        st.experimental_rerun()
             else:
-                st.error(f"❌ Incorrect passkey! Attempts remaining: {3 - failed_attempts}")
-
-                if failed_attempts >= 3:
-                    st.warning("🔒 Too many failed attempts! Redirecting to Login Page.")
-                    st.experimental_rerun()
+                st.error("⚠️ No data found with this label.")
         else:
-            st.error("⚠️ Both fields are required!")
+            st.error("⚠️ All fields are required!")
 
 elif choice == "Login":
     st.subheader("🔑 Reauthorization Required")
     login_pass = st.text_input("Enter Master Password:", type="password")
 
     if st.button("Login"):
-        if login_pass == "admin123":  # Hardcoded for demo, replace with proper auth
-            global failed_attempts
+        if login_pass == "admin123":  # For demo only
             failed_attempts = 0
             st.success("✅ Reauthorized successfully! Redirecting to Retrieve Data...")
             st.experimental_rerun()
