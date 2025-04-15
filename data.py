@@ -59,8 +59,10 @@ def login_page():
 def home():
     st.title("🔐 Secure Data Vault")
     st.markdown("Welcome to your secure data storage.")
-    st.page_link("main.py", label="Store New Data", section="store")
-    st.page_link("main.py", label="Retrieve Data", section="retrieve")
+    if st.button("📥 Store New Data"):
+        st.session_state.page = "store"
+    if st.button("🔓 Retrieve Data"):
+        st.session_state.page = "retrieve"
 
 
 def store_data():
@@ -104,16 +106,15 @@ def retrieve_data():
 
 
 # --- Navigation ---
-st.sidebar.title("🔧 Menu")
-page = st.sidebar.radio("Go to", ["Home", "Store Data", "Retrieve Data"])
+if 'page' not in st.session_state:
+    st.session_state.page = "home"
 
-# --- Login Lock ---
 if st.session_state.login_required and not st.session_state.authorized:
     login_page()
 else:
-    if page == "Home":
+    if st.session_state.page == "home":
         home()
-    elif page == "Store Data":
+    elif st.session_state.page == "store":
         store_data()
-    elif page == "Retrieve Data":
+    elif st.session_state.page == "retrieve":
         retrieve_data()
