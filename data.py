@@ -101,9 +101,7 @@ if choice == "Home":
         st.markdown("🔐 Protected by secure hashing (PBKDF2).")
         st.markdown("👥 Each user has separate data.")
         st.markdown("📁 All data saved securely in `data.json`.")
-    with col2:
-        st.image("https://cdn-icons-png.flaticon.com/512/3064/3064197.png", width=100)
-
+    
 elif choice == "Login":
     st.markdown('<div class="title">🔑 Login or Register</div>', unsafe_allow_html=True)
     username = st.text_input("👤 Username")
